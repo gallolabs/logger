@@ -1,0 +1,38 @@
+{
+  "name": "@gallolabs/logger",
+  "version": "0.1.0",
+  "description": "",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "rm -Rf dist && tsc",
+    "test": "npm run build && npx c8 --all --src 'src' --exclude '*/*test*' --report-dir=/tmp/nyc mocha 'dist/*test*.js'",
+    "deploy": "npm run test && rm dist/*test* && npm login && trap 'npm logout' EXIT && release-it --no-git.requireCleanWorkingDir"
+  },
+  "type": "module",
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "flat": "^4.1.1",
+    "lodash-es": "^4.17.21",
+    "safe-stable-stringify": "^2.4.2"
+  },
+  "devDependencies": {
+    "@types/lodash-es": "^4.17.12",
+    "@types/mocha": "^10.0.6",
+    "@types/node": "^20.10.4",
+    "c8": "^8.0.1",
+    "mocha": "^10.2.0",
+    "release-it": "^17.0.1",
+    "typescript": "^5.3.3"
+  },
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "workspaces": [
+    "."
+  ]
+}
+
