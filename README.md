@@ -1,4 +1,7 @@
-# Logger
+<p align="center">
+    <img height="200" src="logo_w200.jpeg">
+  <p align="center"><strong>Gallo logger</strong></p>
+</p>
 
 Simple logger:
 - log -> processors -> obfuscation -> handlers (own processors + format + transport)
