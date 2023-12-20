@@ -1,6 +1,6 @@
 {
   "name": "@gallolabs/logger",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Simple and powerfull javascript logger",
   "main": "dist/index.js",
   "scripts": {
@@ -26,7 +26,8 @@
     "typescript": "^5.3.3"
   },
   "files": [
-    "dist"
+    "dist",
+    "logo_w200.jpeg"
   ],
   "publishConfig": {
     "access": "public"
