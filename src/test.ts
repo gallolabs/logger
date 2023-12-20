@@ -1,10 +1,88 @@
 import { setTimeout } from 'timers/promises'
-import {createCallbackHandler, createLogger, ConsoleHandler, createJsonFormatter, createConsoleHandler, createLogfmtFormatter, BreadCrumbHandler} from './index.js'
+import {createCallbackHandler, createLogger, ConsoleHandler, createJsonFormatter, createConsoleHandler, createLogfmtFormatter, BreadCrumbHandler, Handler, ErrorDetails} from './index.js'
 import {times} from 'lodash-es'
+import assert from 'assert'
 
 const logger = createLogger()
 
 describe('Logger', () => {
+
+  it('error', async () => {
+
+    const errorToThrown = new Error('Badaboooooom')
+
+    class InstableHandler {
+      async handle() {
+        throw errorToThrown
+      }
+    }
+
+    const handler = new InstableHandler
+
+    let handled: {error: Error, details: ErrorDetails}
+
+    const logger = createLogger({
+      handlers: [handler],
+      onError(error, details) {
+        handled = {error, details}
+      }
+    })
+    try {
+      await logger.info('test')
+    } catch (e) {
+      assert.fail('Oops, should not !')
+    }
+
+    await setTimeout(10)
+
+    assert.strictEqual(handled!.error, errorToThrown)
+    assert.strictEqual(handled!.details.logger, logger)
+    assert.strictEqual(handled!.details.log!.message, 'test')
+    assert.strictEqual(handled!.details.handler, handler)
+    assert.strictEqual(handled!.details.processor, undefined)
+
+  })
+
+  it('idle', async () => {
+
+    let handledCount = 0
+
+    const handler: Handler = {
+      async handle() {
+        await setTimeout(100)
+        handledCount++
+      }
+    }
+
+    const logger = createLogger({
+      handlers: [handler]
+    })
+
+    logger.info('Test 1')
+    await setTimeout(150)
+    logger.info('Test 2')
+    await setTimeout(50)
+    logger.info('Test 3')
+
+    await logger.waitForIdle()
+
+    assert.strictEqual(handledCount, 3)
+
+    const childLogger = logger.child()
+
+    logger.info('Test 4')
+    await setTimeout(50)
+    childLogger.info('ChildTest 1')
+
+    await logger.waitForIdle()
+
+    assert.strictEqual(handledCount, 5)
+
+    await logger.waitForIdle()
+
+    assert.strictEqual(handledCount, 5)
+
+  })
 
   it('logfmt', () => {
     const logger = createLogger({handlers: [

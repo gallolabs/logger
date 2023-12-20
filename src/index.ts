@@ -35,14 +35,21 @@ function ensureNotKeys(object: Object, keys: string[]): Object {
     })
 }
 
-// v3
+export interface ErrorDetails {
+    logger: Logger
+    log?: Log
+    processor?: Processor
+    handler?: Handler
+}
+
+export type ErrorHandler = (error: Error, details: ErrorDetails) => void | Promise<void>
 
 export interface Handler {
     // willHandle(log: Log): boolean
     handle(log: Log, logger: Logger): Promise<void>
 }
 
-export type Processor = (log: Log, logger: Logger) => Log
+export type Processor = (log: Log, logger: Logger) => Promise<Log> | Log
 
 export type LoggerId = any
 
@@ -52,7 +59,7 @@ export interface LoggerOpts {
     metadata?: Object
     processors?: Processor[]
     handlers?: Handler[]
-    onError?: (e: Error) => void
+    onError?: ErrorHandler
 }
 
 export interface Log {
@@ -63,14 +70,27 @@ export interface Log {
     [k: string]: any
 }
 
+/*
+    Alternative to errorHandler and onIdle is EventEmitter
+    With Children handling but it seems a little bit more complicated
+    So keep it simple for the moment
+*/
 export class Logger {
     protected processors: Processor[]
     protected handlers: Handler[]
     protected metadata: Object
-    protected onError?: (e: Error) => void
+    protected onError?: ErrorHandler
     protected parent?: Logger
     protected id?: LoggerId
     protected fullQualification?: { separator: string }
+    protected currentProcessing: Record<'self' | 'children', { count: number, idleCb?: Function, idlePromise?: Promise<void> }> = {
+        self: {
+            count: 0
+        },
+        children: {
+            count: 0
+        }
+    }
 
     constructor(opts: LoggerOpts = {}) {
         this.id = opts.id
@@ -111,61 +131,99 @@ export class Logger {
         this.handlers = handlers
     }
 
-    public async log(level: LogLevel, message: string, metadata?: Object): Promise<void> {
-       try {
+    public async waitForIdle(includeChilds = true) {
+        let selfPromise: Promise<void>
+        let childrenPromise: Promise<void>
 
-            let logger;
-
-            if (this.id) {
-                if (this.fullQualification) {
-                    const parents: LoggerId[] = this.getParents().map(l => l.id).filter(id => id) as LoggerId[]
-                    logger = [...parents.reverse(), this.id]
-                        .map(id => typeof id === 'string' ? id : JSON.stringify(id))
-                        .join(this.fullQualification.separator)
-                } else {
-                    logger = this.id
-                }
+        if (this.currentProcessing.self.count === 0) {
+            selfPromise = Promise.resolve()
+        } else {
+            if (!this.currentProcessing.self.idlePromise) {
+                this.currentProcessing.self.idlePromise = new Promise(resolve => {
+                    this.currentProcessing.self.idleCb = resolve
+                })
             }
+            selfPromise = this.currentProcessing.self.idlePromise
+        }
 
-            let log: Log = {
+        if (!includeChilds || this.currentProcessing.children.count === 0) {
+            childrenPromise = Promise.resolve()
+        } else {
+            if (!this.currentProcessing.children.idlePromise) {
+                this.currentProcessing.children.idlePromise = new Promise(resolve => {
+                    this.currentProcessing.children.idleCb = resolve
+                })
+            }
+            childrenPromise = this.currentProcessing.children.idlePromise
+        }
+
+        await Promise.all([
+            selfPromise,
+            childrenPromise
+        ])
+    }
+
+    /*
+        Promise is resolved when log is fully done
+        But is never rejected, because logging caller should not be impacted in case of logging error
+        this.handleError() is so called without await
+    */
+    public async log(level: LogLevel, message: string, metadata?: Object): Promise<void> {
+       let log: Log
+       this.incrementHandlingCount()
+
+       try {
+            const loggerResolvedId = this.resolveLoggerId()
+
+            log = {
                 timestamp: new Date,
                 level,
-                ...logger && {logger},
+                ...loggerResolvedId && {logger: loggerResolvedId},
                 message,
                 ...ensureNotKeys(
                     cloneDeep({...this.metadata, ...metadata}),
-                    ['level', 'message', 'timestamp', 'logger', 'parentLoggers']
+                    ['timestamp', 'level', 'logger', 'message']
                 )
             }
 
-            for (const processor of this.processors) {
-                log = processor(log, this)
+        } catch (error) {
+            this.decrementHandlingCount()
+            this.handleError(error as Error, {
+                logger: this,
+                log: log!
+            })
+            return
+        }
 
-                if (!log) {
-                    return
-                }
+        for (const processor of this.processors) {
+            try {
+                log = await processor(log, this)
+            } catch (error) {
+                this.decrementHandlingCount()
+                this.handleError(error as Error, {
+                    logger: this,
+                    log,
+                    processor
+                })
+                return
             }
 
-            // const errors = (
-            //     await Promise.allSettled(this.handlers.map(handler => handler.handle(log, this)))
-            // ).filter(r => r.status === 'rejected') as PromiseRejectedResult[] // cloneDeep to protected others handlers ?
-            //try {
-                await Promise.all(this.handlers.map(handler => handler.handle(log, this)))
-            //} catch (e) {
-                //Promise.reject(e)
-            //}
+            if (!log) {
+                this.decrementHandlingCount()
+                return
+            }
+        }
 
-            //await Promise.all(errors.map(p => this.errorHandler(p.reason)))
-         } catch (e) {
-             // Like an event, we notify error but will not fail the log() promise
-             // And if it's bad, don't go up to the caller but to the "process"
-             (async () => {
-                if (!this.onError) {
-                    throw e
-                }
-                this.onError(e as Error)
-             })()
-         }
+        await Promise.all(
+            this.handlers.map(handler => handler.handle(log, this).catch(error => {
+                this.handleError(error as Error, {
+                    logger: this,
+                    log,
+                    handler
+                })
+            }))
+        )
+        this.decrementHandlingCount()
     }
 
     public child(id?: LoggerId, metadata?: Object): Logger {
@@ -178,20 +236,6 @@ export class Logger {
 
     public extends(metadata?: Object): Logger {
         return this.clone(this.parent, this.id, cloneDeep({...this.metadata, ...(metadata || {})}))
-    }
-
-    protected clone(parent?: Logger, id?: LoggerId, metadata?: Object) {
-        const logger = new Logger({
-            id,
-            metadata,
-            processors: [...this.processors],
-            handlers: [...this.handlers],
-            onError: this.onError
-        })
-
-        logger.parent = parent
-
-        return logger
     }
 
     public getId(): LoggerId | undefined {
@@ -219,17 +263,88 @@ export class Logger {
     public async fatal(message: string, metadata?: Object) {
         return this.log('fatal', message, metadata)
     }
+
     public async error(message: string, metadata?: Object) {
         return this.log('error', message, metadata)
     }
+
     public async warning(message: string, metadata?: Object) {
         return this.log('warning', message, metadata)
     }
+
     public async info(message: string, metadata?: Object) {
         return this.log('info', message, metadata)
     }
+
     public async debug(message: string, metadata?: Object) {
         return this.log('debug', message, metadata)
+    }
+
+    protected checkIdle() {
+        if (this.currentProcessing.self.count === 0 && this.currentProcessing.self.idleCb) {
+            this.currentProcessing.self.idleCb()
+            delete this.currentProcessing.self.idleCb
+            delete this.currentProcessing.self.idlePromise
+        }
+
+        if (this.currentProcessing.children.count === 0 && this.currentProcessing.children.idleCb) {
+            this.currentProcessing.children.idleCb()
+            delete this.currentProcessing.children.idleCb
+            delete this.currentProcessing.children.idlePromise
+        }
+    }
+
+    protected incrementHandlingCount() {
+        this.currentProcessing.self.count++
+        this.getParents().forEach(logger => logger.currentProcessing.children.count++)
+    }
+
+    protected decrementHandlingCount() {
+        this.currentProcessing.self.count--
+        this.checkIdle()
+        this.getParents().forEach(logger => {
+            logger.currentProcessing.children.count--
+            logger.checkIdle()
+        })
+    }
+
+    protected resolveLoggerId() {
+        if (!this.id) {
+            return
+        }
+
+        if (this.fullQualification) {
+            const parents: LoggerId[] = this.getParents().map(l => l.id).filter(id => id) as LoggerId[]
+            return [...parents.reverse(), this.id]
+                .map(id => typeof id === 'string' ? id : JSON.stringify(id))
+                .join(this.fullQualification.separator)
+        }
+
+        return this.id
+    }
+
+    protected async handleError(error: Error, details: ErrorDetails) {
+        if (!this.onError) {
+            //process.nextTick(() => {
+                throw error
+            //})
+            return
+        }
+        this.onError(error, details)
+    }
+
+    protected clone(parent?: Logger, id?: LoggerId, metadata?: Object) {
+        const logger = new Logger({
+            id,
+            metadata,
+            processors: [...this.processors],
+            handlers: [...this.handlers],
+            onError: this.onError
+        })
+
+        logger.parent = parent
+
+        return logger
     }
 }
 
@@ -360,7 +475,7 @@ export abstract class BaseHandler implements Handler {
         }
 
         for (const processor of this.processors) {
-            log = processor(log, logger)
+            log = await processor(log, logger)
 
             if (!log) {
                 return
