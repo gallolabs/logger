@@ -1,5 +1,5 @@
 <p align="center">
-    <img height="200" src="logo_w200.jpeg">
+    <img height="200" src="https://raw.githubusercontent.com/gallolabs/logger/main/logo_w200.jpeg">
   <p align="center"><strong>Gallo logger</strong></p>
 </p>
 
