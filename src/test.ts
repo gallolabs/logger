@@ -1,5 +1,5 @@
 import { setTimeout } from 'timers/promises'
-import {createCallbackHandler, createLogger, ConsoleHandler, createJsonFormatter, createConsoleHandler, createLogfmtFormatter, BreadCrumbHandler, Handler, ErrorDetails} from './index.js'
+import {createCallbackHandler, createLogger, ConsoleHandler, createJsonFormatter, createConsoleHandler, createLogfmtFormatter, BreadCrumbHandler, Handler, LoggingError} from './index.js'
 import {times} from 'lodash-es'
 import assert from 'assert'
 
@@ -19,12 +19,12 @@ describe('Logger', () => {
 
     const handler = new InstableHandler
 
-    let handled: {error: Error, details: ErrorDetails}
+    let handled: LoggingError
 
     const logger = createLogger({
       handlers: [handler],
-      onError(error, details) {
-        handled = {error, details}
+      onError(error) {
+        handled = error
       }
     })
     try {
@@ -35,11 +35,11 @@ describe('Logger', () => {
 
     await setTimeout(10)
 
-    assert.strictEqual(handled!.error, errorToThrown)
-    assert.strictEqual(handled!.details.logger, logger)
-    assert.strictEqual(handled!.details.log!.message, 'test')
-    assert.strictEqual(handled!.details.handler, handler)
-    assert.strictEqual(handled!.details.processor, undefined)
+    assert.strictEqual(handled!.cause, errorToThrown)
+    assert.strictEqual(handled!.logger, logger)
+    assert.strictEqual(handled!.log!.message, 'test')
+    assert.strictEqual(handled!.handler, handler)
+    assert.strictEqual(handled!.processor, undefined)
 
   })
 

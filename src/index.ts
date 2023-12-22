@@ -35,14 +35,29 @@ function ensureNotKeys(object: Object, keys: string[]): Object {
     })
 }
 
-export interface ErrorDetails {
+interface ErrorDetails {
     logger: Logger
     log?: Log
     processor?: Processor
     handler?: Handler
 }
 
-export type ErrorHandler = (error: Error, details: ErrorDetails) => void | Promise<void>
+export class LoggingError extends Error {
+    name = 'LoggingError'
+    logger: Logger
+    log?: Log
+    processor?: Processor
+    handler?: Handler
+    constructor(message: string, options: ErrorOptions & ErrorDetails) {
+        super(message, {cause: options.cause})
+        this.logger = options.logger
+        this.log = options.log
+        this.processor = options.processor
+        this.handler = options.handler
+    }
+}
+
+export type ErrorHandler = (error: LoggingError) => void | Promise<void>
 
 export interface Handler {
     // willHandle(log: Log): boolean
@@ -324,13 +339,21 @@ export class Logger {
     }
 
     protected async handleError(error: Error, details: ErrorDetails) {
+        let msg = 'Error while logging'
+        if (details.processor) {
+            msg += ' on processor ' + details.processor.name
+        } else if (details.handler) {
+            msg += ' on handler ' + details.handler.constructor.name
+        }
+        msg += ' : ' + error.message
+        const loggingError = new LoggingError(msg, {cause: error, ...details})
         if (!this.onError) {
             //process.nextTick(() => {
-                throw error
+                throw loggingError
             //})
             return
         }
-        this.onError(error, details)
+        this.onError(loggingError)
     }
 
     protected clone(parent?: Logger, id?: LoggerId, metadata?: Object) {
