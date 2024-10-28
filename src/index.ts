@@ -4,6 +4,7 @@ import { EOL } from 'os'
 // @ts-ignore
 import flat from 'flat'
 const flattenObject = flat.flatten
+import NanoDate from '@gallolabs/nanodate'
 
 export type LogLevel = 'fatal' | 'error' | 'warning' | 'info' | 'debug' // | 'trace'
 const levels: LogLevel[] = ['fatal', 'error', 'warning', 'info', 'debug']
@@ -79,7 +80,7 @@ export interface LoggerOpts {
 
 export interface Log {
     level: LogLevel
-    timestamp: Date
+    timestamp: NanoDate
     logger?: LoggerId
     message: string
     [k: string]: any
@@ -191,7 +192,7 @@ export class Logger {
             const loggerResolvedId = this.resolveLoggerId()
 
             log = {
-                timestamp: new Date,
+                timestamp: new NanoDate,
                 level,
                 ...loggerResolvedId && {logger: loggerResolvedId},
                 message,

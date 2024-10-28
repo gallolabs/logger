@@ -12,6 +12,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@gallolabs/nanodate": "^0.2.4",
     "flat": "^4.1.1",
     "lodash-es": "^4.17.21",
     "safe-stable-stringify": "^2.4.2"
