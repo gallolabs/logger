@@ -11,6 +11,7 @@ Simple logger:
 - [x] BreadCrumb handler (like Monolog Fingers crossed handler) : keep some verbose logs in memory until an error-like log is logged. Kept verbose logs are flushed with it. Verbose logs are kept on a logger chain (parent/child) to flush only (as possible) relevant logs.
 - [x] Error handler
 - [x] Idle wait method
+- [ ] Move filter (level) logic to logger ? Create intermediate handler ? Create a mapping filter<->handler with potentially advanced filters (on metadata etc) ?
 
 ```typescript
 

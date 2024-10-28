@@ -64,7 +64,7 @@ export interface Handler {
     handle(log: Log, logger: Logger): Promise<void>
 }
 
-export type Processor = (log: Log, logger: Logger) => Promise<Log> | Log
+export type Processor = (log: Log, logger: Logger) => Promise<Log | void> | Log | void
 
 export type LoggerId = any
 
@@ -184,7 +184,7 @@ export class Logger {
         this.handleError() is so called without await
     */
     public async log(level: LogLevel, message: string, metadata?: Object): Promise<void> {
-       let log: Log
+       let log: Log | void
        this.incrementHandlingCount()
 
        try {
@@ -212,12 +212,12 @@ export class Logger {
 
         for (const processor of this.processors) {
             try {
-                log = await processor(log, this)
+                log = await processor(log as Log, this)
             } catch (error) {
                 this.decrementHandlingCount()
                 this.handleError(error as Error, {
                     logger: this,
-                    log,
+                    log: log as Log,
                     processor
                 })
                 return
@@ -230,10 +230,10 @@ export class Logger {
         }
 
         await Promise.all(
-            this.handlers.map(handler => handler.handle(log, this).catch(error => {
+            this.handlers.map(handler => handler.handle(log as Log, this).catch(error => {
                 this.handleError(error as Error, {
                     logger: this,
-                    log,
+                    log: log as Log,
                     handler
                 })
             }))
@@ -492,18 +492,22 @@ export abstract class BaseHandler implements Handler {
         return shouldBeLogged(log.level, this.maxLevel, this.minLevel)
     }
 
-    public async handle(log:Log, logger: Logger) {
+    public async handle(log: Log, logger: Logger) {
         if (!this.willHandle(log)) {
             return
         }
 
-        for (const processor of this.processors) {
-            log = await processor(log, logger)
+        let logAfterProcessors: Log | void = log
 
-            if (!log) {
+        for (const processor of this.processors) {
+            logAfterProcessors = await processor(logAfterProcessors, logger)
+
+            if (!logAfterProcessors) {
                 return
             }
         }
+
+        log = logAfterProcessors
 
         return this.write(this.formatter(log), log, logger)
     }
