@@ -13,6 +13,8 @@ Simple logger:
 - [x] Idle wait method
 - [ ] Move filter (level) logic to logger ? Create intermediate handler ? Create a mapping filter<->handler with potentially advanced filters (on metadata etc) ?
 - [ ] Reduce complexity as remote-ee with only 1 root instance and others child instances, and change onError by events ?
+- [ ] Ability to transform event to any data before (technical) formatting
+- [ ] Add async handler (fluentbit, http, etc) to identify problematics ?
 
 ```typescript
 
