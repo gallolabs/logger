@@ -4,7 +4,20 @@ import { EOL } from 'os'
 // @ts-ignore
 import flat from 'flat'
 const flattenObject = flat.flatten
-import NanoDate from '@gallolabs/nanodate'
+import type NanoDate from '@gallolabs/nanodate'
+
+let NanoDateClass: typeof NanoDate | undefined
+
+try {
+    //@ts-ignore
+    NanoDateClass = (await import('@gallolabs/nanodate')).default
+} catch (e) {
+    if (e instanceof Error && 'code' in e && e.code === 'ERR_MODULE_NOT_FOUND') {
+        // Okay
+    } else {
+        throw e
+    }
+}
 
 export type LogLevel = 'fatal' | 'error' | 'warning' | 'info' | 'debug' // | 'trace'
 const levels: LogLevel[] = ['fatal', 'error', 'warning', 'info', 'debug']
@@ -76,11 +89,12 @@ export interface LoggerOpts {
     processors?: Processor[]
     handlers?: Handler[]
     onError?: ErrorHandler
+    nanoDate?: boolean
 }
 
 export interface Log {
     level: LogLevel
-    timestamp: NanoDate
+    timestamp: Date | NanoDate
     logger?: LoggerId
     message: string
     [k: string]: any
@@ -97,6 +111,7 @@ export class Logger {
     protected metadata: Object
     protected onError?: ErrorHandler
     protected parent?: Logger
+    protected nanodate: boolean
     protected id?: LoggerId
     protected fullQualification?: { separator: string }
     protected currentProcessing: Record<'self' | 'children', { count: number, idleCb?: Function, idlePromise?: Promise<void> }> = {
@@ -110,6 +125,7 @@ export class Logger {
 
     constructor(opts: LoggerOpts = {}) {
         this.id = opts.id
+        this.nanodate = !!opts.nanoDate
         this.metadata = opts.metadata || {}
         this.processors = opts.processors || []
         this.handlers = opts.handlers || [new ConsoleHandler]
@@ -120,6 +136,10 @@ export class Logger {
                     ? opts.useFullQualifiedIdInLogs.separator
                     : '.'
             }
+        }
+
+        if (this.nanodate && !NanoDateClass) {
+            throw new Error('NanoDate not installed')
         }
     }
 
@@ -192,7 +212,7 @@ export class Logger {
             const loggerResolvedId = this.resolveLoggerId()
 
             log = {
-                timestamp: new NanoDate,
+                timestamp: this.nanodate ? new (NanoDateClass as typeof NanoDate) : new Date,
                 level,
                 ...loggerResolvedId && {logger: loggerResolvedId},
                 message,
@@ -360,6 +380,7 @@ export class Logger {
     protected clone(parent?: Logger, id?: LoggerId, metadata?: Object) {
         const logger = new Logger({
             id,
+            nanoDate: this.nanodate,
             metadata,
             processors: [...this.processors],
             handlers: [...this.handlers],

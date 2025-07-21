@@ -173,6 +173,7 @@ describe('Logger', () => {
 
     const appLogger = createLogger({
       id: { name: 'app', uid: '118218' },
+      nanoDate: true,
       handlers: [
         new BreadCrumbHandler({
           //passthroughMaxLevel: 'notice',
